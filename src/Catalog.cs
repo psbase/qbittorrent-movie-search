@@ -30,6 +30,7 @@ namespace MovieSearch
         private static readonly Regex Episode = new Regex(@"(?i)(?:^|[\W_])(?:s\d{1,2}(?:e\d+)?|\d{1,2}x\d{1,2}|season[ ._-]*\d+)(?:$|[\W_])", RegexOptions.Compiled);
         private static readonly Regex ReleaseTag = new Regex(@"(?i)(?:^|[\W_])(?:2160p|1080[pi]|720p|480p|web[ ._-]?(?:dl|rip)|blu[ ._-]?ray|x26[45]|h[ ._-]?26[45])(?:$|[\W_])", RegexOptions.Compiled);
         private static readonly Regex Words = new Regex(@"[^\p{L}\p{Nd}]+", RegexOptions.Compiled);
+        private static readonly Regex AlternateTitleSeparator = new Regex(@"\s+/\s+", RegexOptions.Compiled);
         public Catalog(string path) { this.path = path; }
         public bool Exists { get { return File.Exists(path); } }
 
@@ -48,11 +49,27 @@ namespace MovieSearch
             for (int i = candidates.Count - 1; i >= 0; --i)
             {
                 var year = candidates[i];
-                var title = Key(name.Substring(0, year.Index));
-                if (title.Length == 0) continue;
-                Movie movie;
+                string title = name.Substring(0, year.Index);
+                string fullKey = Key(title);
+                if (fullKey.Length == 0) continue;
                 lock (years)
-                    if (ReadYear(year.Value).TryGetValue(title, out movie)) return movie;
+                {
+                    var titles = ReadYear(year.Value);
+                    Movie movie;
+                    if (titles.TryGetValue(fullKey, out movie)) return movie;
+                    if (!AlternateTitleSeparator.IsMatch(title)) continue;
+
+                    // Providers may supply a localized title followed by the original title.
+                    // Accept only when all recognized alternatives identify the same film.
+                    Movie match = null;
+                    foreach (string alternative in AlternateTitleSeparator.Split(title))
+                    {
+                        if (!titles.TryGetValue(Key(alternative), out movie)) continue;
+                        if (movie == null || (match != null && movie != match)) return null;
+                        match = movie;
+                    }
+                    if (match != null) return match;
+                }
             }
             return null;
         }

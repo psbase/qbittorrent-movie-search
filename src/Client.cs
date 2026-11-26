@@ -25,8 +25,8 @@ namespace MovieSearch
         public string engineName { get; set; }
         public string siteUrl { get; set; }
         public long fileSize { get; set; }
-        public int nbSeeders { get; set; }
-        public int nbLeechers { get; set; }
+        public long nbSeeders { get; set; }
+        public long nbLeechers { get; set; }
     }
     internal class Page
     {

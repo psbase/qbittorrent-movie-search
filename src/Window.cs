@@ -34,7 +34,7 @@ namespace MovieSearch
         private string stage;
         private readonly Action<string> openUrl;
         private static readonly string[] Columns = { "Name", "IMDb", "Votes", "Genre", "Runtime", "Size", "Seeds", "Leechers", "Source" };
-        private static readonly Type[] Types = { typeof(string), typeof(double), typeof(int), typeof(string), typeof(int), typeof(long), typeof(int), typeof(int), typeof(string) };
+        private static readonly Type[] Types = { typeof(string), typeof(double), typeof(int), typeof(string), typeof(int), typeof(long), typeof(long), typeof(long), typeof(string) };
         private static readonly int[] Widths = { 420, 60, 78, 145, 75, 95, 64, 72, 120 };
         private string T(string key) { return strings.Get(key); }
         private CultureInfo Culture { get { return CultureInfo.GetCultureInfo(strings.Language == "de" ? "de-DE" : "en-US"); } }

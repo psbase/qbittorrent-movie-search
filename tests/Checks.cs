@@ -56,6 +56,12 @@ namespace MovieSearch
             var movie = catalog.Match("Fixture.Moon.2026.2160p.WEB-DL");
             Check(movie != null && movie.Rating == 8.2 && movie.RatingUrl.EndsWith("/tt0000001/"), "title, year and rating link");
             Check(catalog.Match("Beispielmond (2026)").Id == movie.Id, "German alias");
+            Check(catalog.Match("Луна / Fixture Moon (2026) UHD BDRip 2160p | 4K").Id == movie.Id,
+                "localized and original title with release tags");
+            Check(catalog.Match("Beispielmond / Fixture Moon (2026)").Id == movie.Id,
+                "two alternate titles identify the same film");
+            Check(catalog.Match("Fixture Moon / No Score (2026)") == null &&
+                catalog.Match("Fixture Moon / Shared Title (2026)") == null, "conflicting or ambiguous alternatives stay unmatched");
             Check(catalog.Match("Shared Title (2026)") == null, "ambiguous titles");
             Check(catalog.Match("Fixture.Moon.S01E02.2026") == null && catalog.Match("Fixture Moon 2025") == null, "episodes and different years");
             Check(catalog.Match("No Score (2026)").RatingUrl == null, "unrated title has no clickable rating");
@@ -87,6 +93,15 @@ namespace MovieSearch
                 int col = window.Grid.Columns["IMDb"].Index;
                 Check(window.OpenRating(0, col) && opened == movie.RatingUrl, "sorted rating opens the matching IMDb page");
                 Check(!window.OpenRating(1, col) && !window.OpenRating(0, 0), "missing rating and unrelated cells do not open links");
+                window.Append(new Hit { fileName = "large counts", nbSeeders = 4294967317L, nbLeechers = 4294967318L }, null);
+                window.Append(new Hit { fileName = "unknown counts", nbSeeders = -1, nbLeechers = -1 }, null);
+                window.Grid.Sort(window.Grid.Columns["Seeds"], ListSortDirection.Descending);
+                Check((long)window.Grid.Rows[0].Cells["Seeds"].Value == 4294967317L &&
+                    (long)window.Grid.Rows[0].Cells["Leechers"].Value == 4294967318L,
+                    "large peer counts display and sort without narrowing");
+                Check(window.Grid.Rows[window.Grid.Rows.Count - 1].Cells["Seeds"].Value == DBNull.Value &&
+                    window.Grid.Rows[window.Grid.Rows.Count - 1].Cells["Leechers"].Value == DBNull.Value,
+                    "unknown peer counts remain empty in the results grid");
             }
         }
 
@@ -103,7 +118,8 @@ namespace MovieSearch
                 if (path == "search/plugins") result = "[{\"name\":\"test\",\"fullName\":\"Fixture\",\"enabled\":true}]";
                 if (path == "search/start") result = "{\"id\":17}";
                 if (path.StartsWith("search/results"))
-                    result = "{\"status\":\"Stopped\",\"total\":2,\"results\":[{\"fileName\":\"Fixture Moon\",\"engineName\":\"test\"}]}";
+                    result = "{\"status\":\"Stopped\",\"total\":2,\"results\":[{\"fileName\":\"Fixture Moon\",\"engineName\":\"test\","
+                        + "\"fileSize\":4294967317,\"nbSeeders\":4294967317,\"nbLeechers\":4294967318}]}";
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(result) };
             }
         }
@@ -116,7 +132,10 @@ namespace MovieSearch
                 var providers = await client.Connect("reader", "fixture");
                 Check(providers.Length == 1 && providers[0].enabled, "provider discovery and login");
                 int rows = 0;
-                await client.Search("2026 2160p", "enabled", page => { rows += page.Length; return Task.FromResult(0); }, CancellationToken.None);
+                Hit received = null;
+                await client.Search("2026 2160p", "enabled", page => { received = page[0]; rows += page.Length; return Task.FromResult(0); }, CancellationToken.None);
+                Check(received != null && received.nbSeeders == 4294967317L && received.nbLeechers == 4294967318L &&
+                    received.fileSize == 4294967317L, "64-bit Web API counts survive deserialization and paging");
                 Check(rows == 2 && api.Calls.Any(c => c.Contains("plugins=enabled")) && api.Calls.Any(c => c.Contains("offset=1")), "enabled providers and paginated results");
                 Check(api.Calls.Last() == "search/delete id=17", "finished job cleanup");
                 var cts = new CancellationTokenSource(); cts.Cancel();
