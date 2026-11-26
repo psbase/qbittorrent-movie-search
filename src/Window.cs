@@ -30,7 +30,8 @@ namespace MovieSearch
         private readonly CancellationTokenSource lifetime = new CancellationTokenSource();
         private bool checking;
         private string updateStage;
-        private bool busy, pendingClose;
+        private bool busy, adding, pendingClose;
+        private string addStatus;
         private string stage;
         private readonly Action<string> openUrl;
         private static readonly string[] Columns = { "Name", "IMDb", "Votes", "Genre", "Runtime", "Size", "Seeds", "Leechers", "Source" };
@@ -66,7 +67,7 @@ namespace MovieSearch
             Shown += async (s, e) => await CheckForUpdates();
             FormClosing += (s, e) =>
             {
-                if (busy || checking)
+                if (busy || checking || adding)
                 {
                     e.Cancel = true; pendingClose = true; lifetime.Cancel();
                     if (cancel != null) cancel.Cancel();
@@ -147,7 +148,7 @@ namespace MovieSearch
             try { openUrl(url); } catch (Exception e) { Error(e); }
             return true;
         }
-        private void Error(Exception e) { MessageBox.Show(this, e.Message, T("Movie Search"), MessageBoxButtons.OK, MessageBoxIcon.Warning); }
+        private void Error(Exception e) { MessageBox.Show(this, T(e.Message), T("Movie Search"), MessageBoxButtons.OK, MessageBoxIcon.Warning); }
         private void ApplyLanguage()
         {
             Text = T("Movie Search") + " · qBittorrent";
@@ -158,7 +159,7 @@ namespace MovieSearch
             providers.Items.Clear(); providers.Items.AddRange(engines); providers.SelectedIndex = Math.Max(0, chosen);
             foreach (var key in Columns) Grid.Columns[key].HeaderText = T(key);
             menu.Items.Clear();
-            menu.Items.Add(T("Connection"), null, async (s, e) => await ConfigureConnection());
+            menu.Items.Add(T("Connection"), null, async (s, e) => await ConfigureConnection()).Enabled = !adding;
             var data = (ToolStripMenuItem)menu.Items.Add(T("IMDb data"));
             var aliases = (ToolStripMenuItem)data.DropDownItems.Add(T("Include German titles on the next update"));
             aliases.Checked = prefs.GermanAliases; aliases.CheckOnClick = true;
@@ -188,18 +189,46 @@ namespace MovieSearch
             }
             var old = Grid.ContextMenuStrip;
             var context = new ContextMenuStrip();
-            context.Items.Add(T("Add to qBittorrent"), null, async (s, e) =>
-            {
-                if (Grid.CurrentRow == null || client == null) return;
-                try { await client.Download((Hit)Row(Grid.CurrentRow.Index)["Hit"]); } catch (Exception ex) { Error(ex); }
-            });
+            context.Items.Add(T("Add to qBittorrent"), null, async (s, e) => await AddSelected());
+            context.Opening += (s, e) => e.Cancel = adding || client == null || Grid.CurrentRow == null || (busy && cancel == null);
             Grid.ContextMenuStrip = context;
             if (old != null) old.Dispose();
             Grid.Invalidate(); Status();
         }
+        private async Task AddSelected()
+        {
+            if (adding || client == null || Grid.CurrentRow == null || pendingClose || (busy && cancel == null)) return;
+            var hit = (Hit)Row(Grid.CurrentRow.Index)["Hit"];
+            adding = true; menu.Items[0].Enabled = false; addStatus = null; Status();
+            try { await client.Download(hit); addStatus = "Sent to qBittorrent"; }
+            catch (ApiError e)
+            {
+                if (!pendingClose)
+                {
+                    string message = e.Status == System.Net.HttpStatusCode.Forbidden
+                        ? "qBittorrent refused the request (HTTP 403). Check your Web UI login under Connection."
+                        : e.Message;
+                    MessageBox.Show(this, T(message), T("Add to qBittorrent"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                }
+            }
+            catch (System.Net.Http.HttpRequestException) { ShowUnconfirmedAdd(); }
+            catch (OperationCanceledException) { ShowUnconfirmedAdd(); }
+            catch (Exception e) { if (!pendingClose) Error(e); }
+            finally
+            {
+                adding = false; menu.Items[0].Enabled = true; Status();
+                if (pendingClose && !busy && !checking) BeginInvoke(new Action(Close));
+            }
+        }
+        private void ShowUnconfirmedAdd()
+        {
+            if (!pendingClose) MessageBox.Show(this, T("qBittorrent did not confirm the addition. Check Transfers before trying again."),
+                T("Add to qBittorrent"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
         private void Status()
         {
             status.Text = "  " + table.Rows.Count.ToString(Culture) + " " + T("results");
+            if (addStatus != null) status.Text += "   ·   " + T(addStatus);
             if (stage != null) status.Text += "   ·   " + T(stage);
             if (updateStage != null) status.Text += "   ·   " + T(updateStage);
             else if (!catalog.Exists) status.Text += "   ·   " + T("IMDb ratings pending");
@@ -209,7 +238,7 @@ namespace MovieSearch
             busy = value; stage = message; menu.Enabled = !value; providers.Enabled = !value;
             search.Text = T(value ? "Stop" : "Search"); search.Enabled = !value || cancel != null;
             Status();
-            if (!value && !checking && pendingClose) BeginInvoke(new Action(Close));
+            if (!value && !checking && !adding && pendingClose) BeginInvoke(new Action(Close));
         }
         private async Task CheckForUpdates()
         {
@@ -227,7 +256,7 @@ namespace MovieSearch
                 updateStage = null;
             }
             catch (Exception) { updateStage = "IMDb update unavailable. Will retry on a later launch."; }
-            finally { checking = false; Status(); if (pendingClose && !busy) BeginInvoke(new Action(Close)); }
+            finally { checking = false; Status(); if (pendingClose && !busy && !adding) BeginInvoke(new Action(Close)); }
         }
         private async Task ReloadMovies()
         {
@@ -302,7 +331,7 @@ namespace MovieSearch
             if (pendingClose) return;
             if (providers.Items.Count < 2) { MessageBox.Show(this, T("Enable at least one search provider in qBittorrent.")); return; }
             cancel = new CancellationTokenSource();
-            table.Clear(); SetBusy(true, "Searching");
+            table.Clear(); addStatus = null; SetBusy(true, "Searching");
             try
             {
                 var provider = (Provider)providers.SelectedItem;

@@ -144,6 +144,81 @@ namespace MovieSearch
                 Check(api.Calls.Any(c => c == "search/stop id=17") && api.Calls.Last() == "search/delete id=17", "cancelled job cleanup");
             }
         }
+        private sealed class AddApi : HttpMessageHandler
+        {
+            public bool SignedIn, AllowLogin = true, RefuseAdd, LoseReply;
+            public int Logins, Adds;
+            public string AddForm, Reply = "{\"success_count\":1,\"pending_count\":0,\"failure_count\":0}";
+            protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage req, CancellationToken token)
+            {
+                string path = req.RequestUri.AbsolutePath.Substring("/api/v2/".Length);
+                HttpStatusCode status = HttpStatusCode.OK;
+                string body = "";
+                if (path == "auth/login")
+                {
+                    Logins++;
+                    SignedIn = AllowLogin && await req.Content.ReadAsStringAsync() == "username=reader&password=fixture";
+                    status = SignedIn ? HttpStatusCode.NoContent : HttpStatusCode.Unauthorized;
+                }
+                else if (!SignedIn) status = HttpStatusCode.Forbidden;
+                else if (path == "search/plugins") body = "[]";
+                else if (path == "app/version" && req.Method == HttpMethod.Get) body = "v5.3.0";
+                else if (path == "torrents/add" && req.Method == HttpMethod.Post)
+                {
+                    Adds++; AddForm = await req.Content.ReadAsStringAsync();
+                    if (LoseReply) throw new HttpRequestException("lost reply");
+                    status = RefuseAdd ? HttpStatusCode.Forbidden : HttpStatusCode.OK; body = Reply;
+                }
+                else throw new Exception("Unexpected request " + req.Method + " " + path);
+                return new HttpResponseMessage(status) { Content = new StringContent(body) };
+            }
+        }
+        private static async Task TestAdd()
+        {
+            var api = new AddApi();
+            var magnet = new Hit { fileUrl = "magnet:?xt=urn:btih:0123456789012345678901234567890123456789&dn=A+B%26C", engineName = "fixture" };
+            var link = new Hit { fileUrl = "https://fixture.invalid/get?id=17&name=A+B%26C", engineName = "fixture" };
+            using (var client = new Client("http://127.0.0.1:8080", api))
+            {
+                await client.Connect("reader", "fixture");
+                api.SignedIn = false;
+                await client.Download(magnet);
+                Check(api.Adds == 1 && api.Logins == 2 && Uri.UnescapeDataString(api.AddForm) == "urls=" + magnet.fileUrl,
+                    "expired Web UI login renews before a single unmodified magnet is submitted");
+                api.Reply = "{\"success_count\":0,\"pending_count\":1,\"added_torrent_ids\":[]}";
+                await client.Download(link);
+                Check(api.Logins == 2 && api.Adds == 2 && api.AddForm.Split('&').Length == 2
+                    && Uri.UnescapeDataString(api.AddForm) == "urls=" + link.fileUrl + "&downloader=fixture",
+                    "pending provider URL uses the original engine and preserves encoded query data");
+                api.RefuseAdd = true;
+                try { await client.Download(link); throw new Exception("Expected refusal"); }
+                catch (ApiError e) { Check(e.Status == HttpStatusCode.Forbidden && api.Adds == 3 && api.Logins == 2,
+                    "an add-specific 403 is reported without resubmission or another login"); }
+                api.RefuseAdd = false; api.LoseReply = true;
+                try { await client.Download(link); throw new Exception("Expected lost reply"); }
+                catch (HttpRequestException) { Check(api.Adds == 4, "an uncertain add is never automatically repeated"); }
+                api.LoseReply = false; api.Reply = "Fails.";
+                try { await client.Download(link); throw new Exception("Expected negative response"); }
+                catch (InvalidOperationException) { Check(api.Adds == 5, "negative add response is not reported as success"); }
+                api.SignedIn = false; api.AllowLogin = false;
+                for (int i = 0; i < 2; i++)
+                {
+                    try { await client.Download(link); throw new Exception("Expected failed login"); }
+                    catch (UnauthorizedAccessException) { }
+                }
+                Check(api.Adds == 5 && api.Logins == 3, "rejected credentials stop automatic login attempts and prevent submission");
+                try { await client.Download(new Hit { fileUrl = link.fileUrl + "\n" + magnet.fileUrl }); throw new Exception("Expected invalid link"); }
+                catch (ArgumentException) { Check(api.Adds == 5, "a single result cannot submit multiple URLs"); }
+            }
+            api = new AddApi { SignedIn = true };
+            using (var client = new Client("http://127.0.0.1:8080", api))
+            {
+                await client.Connect("", ""); api.SignedIn = false;
+                try { await client.Download(link); throw new Exception("Expected sign-in prompt"); }
+                catch (UnauthorizedAccessException e) { Check(api.Logins == 0 && api.Adds == 0 && new Strings("de").Get(e.Message) != e.Message,
+                    "a missing login gives translated reconnect instructions without submitting"); }
+            }
+        }
         [STAThread]
         private static int Main()
         {
@@ -153,6 +228,7 @@ namespace MovieSearch
             {
                 TestUpdates(dir);
                 Task.Run((Func<Task>)TestApi).GetAwaiter().GetResult();
+                Task.Run((Func<Task>)TestAdd).GetAwaiter().GetResult();
                 Console.WriteLine(count + " checks passed."); return 0;
             }
             catch (Exception e) { Console.Error.WriteLine(e); return 1; }

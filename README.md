@@ -16,6 +16,8 @@ Movie Search looks for a film title and release year in each torrent name. Missi
 
 To update the application, close Movie Search and rerun Install.cmd from the new package. To uninstall, remove the plugin through qBittorrent, close all Movie Search windows, and remove its MovieSearchForQBittorrent folder under LocalAppData.
 
+To add a result, right-click its row and choose **Add to qBittorrent**. Magnet links go directly to the Transfers list. For a provider link, qBittorrent uses the search provider to resolve it. Movie Search checks the Web UI session before submitting and renews an expired login using the credentials from the open window. If qBittorrent still refuses the request, use **Connection** to sign in again. If a request times out, check Transfers before retrying.
+
 ## Build and test
 
 Run the following in PowerShell from this repository on Windows with .NET Framework 4.8. The script uses the Windows framework compiler and creates out/MovieSearch-Windows.zip.

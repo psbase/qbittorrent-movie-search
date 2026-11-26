@@ -35,9 +35,17 @@ namespace MovieSearch
         public Hit[] results { get; set; }
     }
 
+    internal sealed class ApiError : HttpRequestException
+    {
+        public readonly HttpStatusCode Status;
+        public ApiError(string endpoint, HttpStatusCode status) : base("qBittorrent " + endpoint.Split('?')[0]
+            + " (HTTP " + (int)status + " " + status + ")") { Status = status; }
+    }
+
     internal sealed class Client : IDisposable
     {
         private readonly HttpClient http;
+        private NetworkCredential credentials;
         private readonly JavaScriptSerializer json = new JavaScriptSerializer { MaxJsonLength = 16000000 };
         public static bool IsLocal(string value)
         {
@@ -54,7 +62,7 @@ namespace MovieSearch
             http.DefaultRequestHeaders.Referrer = origin;
             http.Timeout = TimeSpan.FromSeconds(20);
         }
-        public void Dispose() { http.Dispose(); }
+        public void Dispose() { credentials = null; http.Dispose(); }
         private async Task<string> Send(string method, CancellationToken token, params string[] pairs)
         {
             using (var msg = new HttpRequestMessage(pairs.Length == 0 ? HttpMethod.Get : HttpMethod.Post, method))
@@ -64,19 +72,23 @@ namespace MovieSearch
                         .Select(i => new KeyValuePair<string, string>(pairs[2*i], pairs[2*i+1])));
                 using (var res = await http.SendAsync(msg, token).ConfigureAwait(false))
                 {
-                    res.EnsureSuccessStatusCode();
+                    if (!res.IsSuccessStatusCode) throw new ApiError(method, res.StatusCode);
                     return await res.Content.ReadAsStringAsync().ConfigureAwait(false);
                 }
             }
         }
+        private async Task Login(NetworkCredential login)
+        {
+            string result = await Send("auth/login", CancellationToken.None, "username", login.UserName, "password", login.Password);
+            if (result.Trim() == "Fails.") throw new UnauthorizedAccessException("Open Connection and sign in to qBittorrent again.");
+        }
         public async Task<Provider[]> Connect(string user, string password)
         {
-            if (!string.IsNullOrEmpty(user))
-            {
-                if ((await Send("auth/login", CancellationToken.None, "username", user, "password", password)).Trim() == "Fails.")
-                    throw new UnauthorizedAccessException();
-            }
-            return json.Deserialize<Provider[]>(await Send("search/plugins", CancellationToken.None));
+            var login = string.IsNullOrEmpty(user) ? null : new NetworkCredential(user, password);
+            if (login != null) await Login(login);
+            var providers = json.Deserialize<Provider[]>(await Send("search/plugins", CancellationToken.None));
+            credentials = login;
+            return providers;
         }
         public async Task Search(string pattern, string provider, Func<Hit[], Task> append, CancellationToken token)
         {
@@ -109,9 +121,45 @@ namespace MovieSearch
             catch (Exception e) { if (failure == null) failure = ExceptionDispatchInfo.Capture(e); }
             if (failure != null) failure.Throw();
         }
-        public Task Download(Hit hit)
+        private async Task EnsureAddSession()
         {
-            return Send("search/downloadTorrent", CancellationToken.None, "torrentUrl", hit.fileUrl, "pluginName", hit.engineName);
+            // A read-only check can be retried safely. Submit the actual add exactly once.
+            try { await Send("app/version", CancellationToken.None); return; }
+            catch (ApiError e) { if (e.Status != HttpStatusCode.Forbidden) throw; }
+
+            var login = credentials;
+            if (login == null) throw new UnauthorizedAccessException("Open Connection and sign in to qBittorrent again.");
+            try { await Login(login); }
+            catch (ApiError e)
+            {
+                if (e.Status != HttpStatusCode.Unauthorized && e.Status != HttpStatusCode.Forbidden) throw;
+                credentials = null;
+                throw new UnauthorizedAccessException("Open Connection and sign in to qBittorrent again.", e);
+            }
+            catch (UnauthorizedAccessException) { credentials = null; throw; }
+        }
+        public async Task Download(Hit hit)
+        {
+            string url = hit.fileUrl;
+            Uri parsed;
+            if (string.IsNullOrWhiteSpace(url) || url.Any(char.IsControl) || !Uri.TryCreate(url, UriKind.Absolute, out parsed)
+                || (parsed.Scheme != "magnet" && parsed.Scheme != "http" && parsed.Scheme != "https"))
+                throw new ArgumentException("This result has no usable download link.");
+
+            await EnsureAddSession();
+            string[] form = parsed.Scheme == "magnet" || string.IsNullOrEmpty(hit.engineName)
+                ? new[] { "urls", url } : new[] { "urls", url, "downloader", hit.engineName };
+            string result = await Send("torrents/add", CancellationToken.None, form);
+            // qBittorrent 5.3 reports accepted and pending additions in JSON. Older APIs return Ok.
+            if (result.Trim() == "Ok.") return;
+            if (result.TrimStart().StartsWith("{", StringComparison.Ordinal))
+            {
+                var counts = json.Deserialize<Dictionary<string, object>>(result);
+                object added, pending;
+                if ((counts.TryGetValue("success_count", out added) && added is int && (int)added > 0)
+                    || (counts.TryGetValue("pending_count", out pending) && pending is int && (int)pending > 0)) return;
+            }
+            throw new InvalidOperationException("qBittorrent did not confirm the addition. Check Transfers before trying again.");
         }
     }
 }

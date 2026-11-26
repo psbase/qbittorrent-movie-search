@@ -40,3 +40,8 @@ Language	Sprache
 Columns	Spalten
 Open on IMDb	Auf IMDb öffnen
 Add to qBittorrent	Zu qBittorrent hinzufügen
+Sent to qBittorrent	An qBittorrent gesendet
+Open Connection and sign in to qBittorrent again.	Bitte unter „Verbindung“ erneut bei qBittorrent anmelden.
+This result has no usable download link.	Dieser Treffer enthält keinen gültigen Downloadlink.
+qBittorrent refused the request (HTTP 403). Check your Web UI login under Connection.	qBittorrent hat die Anfrage abgelehnt (HTTP 403). Bitte unter „Verbindung“ die Web-UI-Anmeldung prüfen.
+qBittorrent did not confirm the addition. Check Transfers before trying again.	qBittorrent hat das Hinzufügen nicht bestätigt. Bitte vor einem erneuten Versuch die Transferliste prüfen.
