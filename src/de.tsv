@@ -1,0 +1,47 @@
+Movie Search	Filmsuche
+Search	Suchen
+Search torrents	Torrents suchen
+Stop	Stopp
+results	Treffer
+Enabled providers	Aktivierte Suchanbieter
+Name	Name
+IMDb	IMDb
+Votes	Stimmen
+Genre	Genre
+Runtime	Laufzeit
+Size	Größe
+Seeds	Seeds
+Leechers	Leecher
+Source	Quelle
+Connection	Verbindung
+Local Web UI address	Lokale Web-UI-Adresse
+Username	Benutzername
+Password	Passwort
+Connect	Verbinden
+Connecting	Verbindungsaufbau
+Enable the Web UI in qBittorrent options. Your password is used for this session only.	Web-UI in den qBittorrent-Einstellungen aktivieren. Das Passwort gilt nur für diese Sitzung.
+Use a local Web UI address.	Bitte eine lokale Web-UI-Adresse eingeben.
+Connection timed out.	Zeitüberschreitung bei der Verbindung.
+Searching	Suche läuft
+Enable at least one search provider in qBittorrent.	Bitte mindestens einen Suchanbieter in qBittorrent aktivieren.
+IMDb data	IMDb-Daten
+Include German titles on the next update	Deutsche Alternativtitel beim nächsten Update laden
+Import from folder	Aus Ordner importieren
+Choose the folder containing the IMDb .tsv.gz files.	Ordner mit den IMDb-Dateien im Format .tsv.gz auswählen.
+Import IMDb data for personal, non-commercial use. Include German alternative titles? This requires the additional title.akas dataset.	IMDb-Daten für den persönlichen, nichtkommerziellen Gebrauch importieren. Auch deutsche Alternativtitel importieren? Dafür ist zusätzlich der Datensatz title.akas erforderlich.
+Checking IMDb data	IMDb-Daten werden geprüft
+IMDb ratings pending	IMDb-Bewertungen stehen noch aus
+IMDb update unavailable. Will retry on a later launch.	IMDb-Aktualisierung fehlgeschlagen. Neuer Versuch bei einem späteren Start.
+Ratings	Bewertungen werden geladen
+Titles	Filmtitel werden geladen
+German titles	Deutsche Filmtitel werden geladen
+Saving index	Index wird gespeichert
+Language	Sprache
+Columns	Spalten
+Open on IMDb	Auf IMDb öffnen
+Add to qBittorrent	Zu qBittorrent hinzufügen
+Sent to qBittorrent	An qBittorrent gesendet
+Open Connection and sign in to qBittorrent again.	Bitte unter „Verbindung“ erneut bei qBittorrent anmelden.
+This result has no usable download link.	Dieser Treffer enthält keinen gültigen Downloadlink.
+qBittorrent refused the request (HTTP 403). Check your Web UI login under Connection.	qBittorrent hat die Anfrage abgelehnt (HTTP 403). Bitte unter „Verbindung“ die Web-UI-Anmeldung prüfen.
+qBittorrent did not confirm the addition. Check Transfers before trying again.	qBittorrent hat das Hinzufügen nicht bestätigt. Bitte vor einem erneuten Versuch die Transferliste prüfen.

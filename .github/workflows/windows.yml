@@ -1,0 +1,46 @@
+name: Windows package
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run the offline checks
+        shell: pwsh
+        run: ./build.ps1 -Test
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MovieSearch-Windows
+          path: out/MovieSearch-Windows.zip
+          if-no-files-found: error
+
+  add-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile the Web API integration test
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y mono-mcs libmono-system-net-http4.0-cil libmono-system-web-extensions4.0-cil
+          mcs -r:System.Net.Http -r:System.Web.Extensions -out:"$RUNNER_TEMP/LiveAdd.exe" src/Client.cs tests/LiveAdd.cs
+      - name: Add a test magnet after qBittorrent 5.3.0 expires the session
+        shell: bash
+        run: |
+          docker run -dt --name movie-search-qbt --network none -e QBT_LEGAL_NOTICE=confirm qbittorrentofficial/qbittorrent-nox:5.3.0-1
+          trap 'docker rm -f movie-search-qbt >/dev/null' EXIT
+          for attempt in {1..60}; do
+            password=$(docker logs movie-search-qbt 2>&1 | sed -n 's/.*temporary password is provided for this session: //p' | tr -d '\r' | tail -1)
+            if [[ -n "$password" ]]; then break; fi
+            sleep 1
+          done
+          test -n "$password"
+          pid=$(docker inspect --format '{{.State.Pid}}' movie-search-qbt)
+          sudo nsenter -t "$pid" -n -- mono "$RUNNER_TEMP/LiveAdd.exe" <<< "$password"
